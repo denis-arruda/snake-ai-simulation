@@ -1,0 +1,54 @@
+services:
+
+  # ── Messaging ──────────────────────────────────────────────────────────────
+  pulsar:
+    image: apachepulsar/pulsar:3.3.0
+    command: bin/pulsar standalone --no-functions-worker
+    ports:
+      - "6650:6650"   # broker
+      - "8080:8080"   # admin API
+    environment:
+      PULSAR_MEM: "-Xms128m -Xmx512m -XX:MaxDirectMemorySize=256m"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/admin/v2/brokers/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+
+  # ── Application services ───────────────────────────────────────────────────
+  engine:
+    image: snake/snake-engine:latest
+    ports:
+      - "8081:8080"
+    environment:
+      PULSAR_SERVICE_URL: pulsar://pulsar:6650
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://lgtm:4317
+    depends_on:
+      pulsar:
+        condition: service_healthy
+    restart: on-failure
+
+  agent:
+    image: snake/snake-agent:latest
+    environment:
+      AGENT_ID: agent-1
+      PULSAR_SERVICE_URL: pulsar://pulsar:6650
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://lgtm:4317
+      LLM_API_KEY: ${LLM_API_KEY}
+      AGENT_LLM_MODEL: ${AGENT_LLM_MODEL:-claude-haiku-4-5-20251001}
+    depends_on:
+      pulsar:
+        condition: service_healthy
+    restart: on-failure
+
+  # ── Observability (Grafana LGTM — Loki + Grafana + Tempo + Mimir) ──────────
+  lgtm:
+    image: grafana/otel-lgtm:latest
+    ports:
+      - "3000:3000"   # Grafana UI
+      - "4317:4317"   # OTLP gRPC  (traces + metrics + logs)
+      - "4318:4318"   # OTLP HTTP
+    volumes:
+      - ./prometheus/prometheus.yml:/otel-lgtm/prometheus.yaml:ro
+

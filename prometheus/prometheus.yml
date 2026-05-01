@@ -1,0 +1,13 @@
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: snake-engine
+    static_configs:
+      - targets: ["engine:8080"]
+    metrics_path: /q/metrics
+
+  - job_name: snake-agent
+    static_configs:
+      - targets: ["agent:8080"]
+    metrics_path: /q/metrics
