@@ -52,6 +52,12 @@
             <artifactId>quarkus-container-image-jib</artifactId>
         </dependency>
 
+        <!-- REST -->
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-rest</artifactId>
+        </dependency>
+
         <!-- Core -->
         <dependency>
             <groupId>io.quarkus</groupId>

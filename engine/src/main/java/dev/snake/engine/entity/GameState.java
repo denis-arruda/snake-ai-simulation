@@ -29,7 +29,7 @@ public class GameState {
     List<Position> foods;
 
     @PostConstruct
-    void initialize() {
+    public void restart() {
         tick   = 0;
         snakes = List.of(randomSnake("agent-1"));
         var occupied = snakes.stream().flatMap(s -> s.cells.stream()).toList();
@@ -37,8 +37,32 @@ public class GameState {
     }
 
     public void advance() {
+        if (snakes.stream().noneMatch(s -> s.alive)) return;
         tick++;
-        // TODO: move snakes, detect collisions, handle food consumption
+        snakes.stream().filter(s -> s.alive).forEach(this::advanceSnake);
+    }
+
+    void advanceSnake(Snake snake) {
+        var newHead = nextHead(snake);
+        if (isOutOfBounds(newHead) || snake.cells.contains(newHead)) {
+            snake.kill();
+        } else {
+            snake.move(newHead);
+        }
+    }
+
+    Position nextHead(Snake snake) {
+        var head = snake.cells.get(0);
+        return switch (snake.direction) {
+            case RIGHT -> new Position(head.x() + 1, head.y());
+            case LEFT  -> new Position(head.x() - 1, head.y());
+            case DOWN  -> new Position(head.x(),      head.y() + 1);
+            case UP    -> new Position(head.x(),      head.y() - 1);
+        };
+    }
+
+    boolean isOutOfBounds(Position pos) {
+        return pos.x() < 0 || pos.x() >= gridSize || pos.y() < 0 || pos.y() >= gridSize;
     }
 
     public RenderState toRenderState() {
