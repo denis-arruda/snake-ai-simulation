@@ -1,6 +1,5 @@
 package dev.snake.engine.boundary;
 
-import dev.snake.engine.entity.GameState;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.POST;
@@ -11,17 +10,17 @@ import jakarta.ws.rs.core.Response;
 @ApplicationScoped
 public class GameResource {
 
-    final GameState gameState;
+    final GameEngine gameEngine;
 
     @Inject
-    GameResource(GameState gameState) {
-        this.gameState = gameState;
+    GameResource(GameEngine gameEngine) {
+        this.gameEngine = gameEngine;
     }
 
     @POST
     @Path("/restart")
     public Response restart() {
-        gameState.restart();
+        gameEngine.restart();
         return Response.noContent().build();
     }
 }

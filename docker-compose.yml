@@ -36,7 +36,7 @@ services:
       PULSAR_SERVICE_URL: pulsar://pulsar:6650
       OTEL_EXPORTER_OTLP_ENDPOINT: http://lgtm:4317
       LLM_API_KEY: ${LLM_API_KEY}
-      AGENT_LLM_MODEL: ${AGENT_LLM_MODEL:-claude-haiku-4-5-20251001}
+      AGENT_LLM_MODEL: ${AGENT_LLM_MODEL:-gpt-4o-mini}
     depends_on:
       pulsar:
         condition: service_healthy

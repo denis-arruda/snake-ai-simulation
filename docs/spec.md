@@ -124,6 +124,17 @@ Agents <--> Pulsar <--> Game Engine <--> WebSocket <--> Browser
   * Agent is slow
   * Agent fails
 * Use last known decision as fallback
+* Fault tolerance via MicroProfile Fault Tolerance (`quarkus-smallrye-fault-tolerance`):
+
+  | Boundary | Policy | Configuration |
+  |---|---|---|
+  | Agent → LLM (OpenAI) | `@Timeout` | 12 s safety net above LangChain4j's own 10 s |
+  | Agent → LLM (OpenAI) | `@Retry` | 2 retries, 500 ms delay; aborts on timeout |
+  | Agent → LLM (OpenAI) | `@CircuitBreaker` | Opens after 60 % failures in 5 requests; stays open 30 s |
+  | Agent → LLM (OpenAI) | `@Fallback` | Returns `null` → decision skipped → snake holds direction |
+  | Engine → Pulsar (perception) | `@Retry` | 2 retries, 100 ms delay |
+  | Engine → Pulsar (perception) | `@CircuitBreaker` | Opens after 50 % failures in 10 requests; stays open 15 s |
+  | Engine tick | `@Timeout` | 1 s — prevents tick pile-up under load |
 
 ---
 
@@ -142,10 +153,11 @@ Agents <--> Pulsar <--> Game Engine <--> WebSocket <--> Browser
 |---|---|
 | Language | Java 26 |
 | Runtime | Quarkus |
+| Concurrency | Virtual threads (`quarkus-virtual-threads`) — all blocking handlers run on virtual threads via `@RunOnVirtualThread` |
 | Messaging | Apache Pulsar |
 | AI / LLM | LangChain4j |
-| LLM Model | Configurable via `AGENT_LLM_MODEL` (default: `claude-haiku-4-5-20251001`) |
-| LLM API Key | `LLM_API_KEY` env var |
+| LLM Model | Configurable via `AGENT_LLM_MODEL` (default: `gpt-4o-mini`) |
+| LLM Provider | OpenAI — key via `LLM_API_KEY` env var |
 | UI | HTML5 Canvas + JavaScript |
 | Transport | WebSocket (embedded in engine) |
 | Observability | Grafana LGTM (Loki, Grafana, Tempo, Mimir) |
@@ -162,7 +174,7 @@ Agents <--> Pulsar <--> Game Engine <--> WebSocket <--> Browser
 #### 6.1.1 Agent Perception
 
 ```
-persistent://snake/game/agent-state-{agentId}
+persistent://public/default/snake-agent-state-{agentId}
 ```
 
 * One topic per agent
@@ -173,7 +185,7 @@ persistent://snake/game/agent-state-{agentId}
 #### 6.1.2 Agent Decisions
 
 ```
-persistent://snake/game/agent-decisions
+persistent://public/default/snake-agent-decisions
 ```
 
 * Shared topic
@@ -184,7 +196,7 @@ persistent://snake/game/agent-decisions
 #### 6.1.3 Render State
 
 ```
-persistent://snake/game/render-state
+persistent://public/default/snake-render-state
 ```
 
 * Consumed by the WebSocket handler in the engine
@@ -203,14 +215,13 @@ persistent://snake/game/render-state
   "self": {
     "head": { "x": 5, "y": 5 },
     "direction": "RIGHT",
-    "length": 4
+    "length": 4,
+    "body": [{ "x": 5, "y": 5 }, { "x": 4, "y": 5 }, { "x": 3, "y": 5 }]
   },
-  "visibleCells": {
-    "food": [{ "x": 6, "y": 5 }],
-    "snakes": [{ "agentId": "agent-2", "x": 8, "y": 7 }],
-    "walls": []
-  },
-  "windowSize": 7
+  "visibleFood": [{ "x": 6, "y": 5 }],
+  "nearbySnakes": [{ "agentId": "agent-2", "x": 8, "y": 7 }],
+  "windowSize": 7,
+  "gridSize": 30
 }
 ```
 
@@ -293,21 +304,31 @@ persistent://snake/game/render-state
 * Call LLM (via LangChain4j) to get next direction
 * Publish movement decision to shared decisions topic
 
+### Key Classes
+
+| Class | Role |
+|---|---|
+| `AgentDecider` | Pulsar consumer; manages the latest-value slot and virtual thread executor |
+| `LlmGateway` | CDI bean wrapping the LLM call with `@Timeout`, `@Retry`, `@CircuitBreaker`, `@Fallback` |
+| `SnakeDecisionAi` | LangChain4j `@RegisterAiService` interface — the actual OpenAI call |
+
 ---
 
 ### Processing Model
 
-* Always process **latest message only** — discard backlog on startup and lag
-* One LLM call per perception message processed
+* **Latest-value slot:** incoming perception messages overwrite an `AtomicReference` — only the freshest state is ever processed
+* An `AtomicBoolean` gate ensures at most one LLM call is in-flight at a time; arriving messages during processing are dropped (overwrite the slot)
+* LLM calls run on virtual threads via `Executors.newVirtualThreadPerTaskExecutor()`
+* The Pulsar consumer handler (`@Incoming`) is annotated `@RunOnVirtualThread`
 
 ---
 
 ### Decision Strategy
 
 * **Single-step:** send current state as prompt, receive direction
-* Input to LLM: current position, visible food, visible snakes, current direction
+* Input to LLM: grid size, head position, full body cells, current direction, visible food, nearby snake segments
 * Output from LLM: one of `UP`, `DOWN`, `LEFT`, `RIGHT`
-* Model: configurable via `AGENT_LLM_MODEL` env var, default `claude-haiku-4-5-20251001`
+* Model: configurable via `AGENT_LLM_MODEL` env var, default `gpt-4o-mini` (OpenAI)
 * API key: `LLM_API_KEY` env var
 
 ---

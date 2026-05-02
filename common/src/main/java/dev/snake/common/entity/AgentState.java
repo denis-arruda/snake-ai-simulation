@@ -8,9 +8,10 @@ public record AgentState(
         SnakeInfo self,
         List<Position> visibleFood,
         List<SnakeSegment> nearbySnakes,
-        int windowSize) {
+        int windowSize,
+        int gridSize) {
 
-    public record SnakeInfo(Position head, Direction direction, int length) {}
+    public record SnakeInfo(Position head, Direction direction, int length, List<Position> body) {}
 
     public record Position(int x, int y) {}
 

@@ -1,5 +1,7 @@
 package dev.snake.engine.entity;
 
+import dev.snake.common.entity.AgentDecision;
+import dev.snake.common.entity.AgentState;
 import dev.snake.common.entity.Direction;
 import dev.snake.common.entity.RenderState;
 import dev.snake.common.entity.RenderState.Position;
@@ -9,6 +11,7 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.stream.Stream;
 
@@ -24,6 +27,9 @@ public class GameState {
     @ConfigProperty(name = "game.snake.initial-length", defaultValue = "3")
     int initialSnakeLength;
 
+    @ConfigProperty(name = "game.decision.max-age-ticks", defaultValue = "5")
+    int maxDecisionAgeTicks;
+
     int tick;
     List<Snake> snakes;
     List<Position> foods;
@@ -34,6 +40,27 @@ public class GameState {
         snakes = List.of(randomSnake("agent-1"));
         var occupied = snakes.stream().flatMap(s -> s.cells.stream()).toList();
         foods  = new ArrayList<>(randomPositions(maxFood, occupied));
+    }
+
+    public void applyDecisions(Map<String, AgentDecision> decisions) {
+        snakes.stream()
+                .filter(s -> s.alive)
+                .forEach(s -> {
+                    var decision = decisions.get(s.agentId);
+                    if (decision == null) return;
+                    if (tick - decision.basedOnTick() > maxDecisionAgeTicks) return;
+                    if (isReversal(decision.direction(), s.direction)) return;
+                    s.direction = decision.direction();
+                });
+    }
+
+    boolean isReversal(Direction requested, Direction current) {
+        return switch (requested) {
+            case UP    -> current == Direction.DOWN;
+            case DOWN  -> current == Direction.UP;
+            case LEFT  -> current == Direction.RIGHT;
+            case RIGHT -> current == Direction.LEFT;
+        };
     }
 
     public void advance() {
@@ -76,6 +103,46 @@ public class GameState {
     public RenderState toRenderState() {
         var snakeRenders = snakes.stream().map(Snake::toRender).toList();
         return new RenderState(tick, snakeRenders, List.copyOf(foods));
+    }
+
+    public List<AgentState> toAgentStates(int windowSize) {
+        int half = windowSize / 2;
+        return snakes.stream()
+                .filter(s -> s.alive)
+                .map(s -> toAgentState(s, half, windowSize))
+                .toList();
+    }
+
+    AgentState toAgentState(Snake snake, int half, int windowSize) {
+        var head = snake.cells.get(0);
+
+        var body = snake.cells.stream()
+                .map(p -> new AgentState.Position(p.x(), p.y()))
+                .toList();
+
+        var self = new AgentState.SnakeInfo(
+                new AgentState.Position(head.x(), head.y()),
+                snake.direction,
+                snake.cells.size(),
+                body);
+
+        var visibleFood = foods.stream()
+                .filter(f -> inWindow(f, head, half))
+                .map(f -> new AgentState.Position(f.x(), f.y()))
+                .toList();
+
+        var nearbySnakes = snakes.stream()
+                .filter(other -> !other.agentId.equals(snake.agentId) && other.alive)
+                .flatMap(other -> other.cells.stream()
+                        .filter(p -> inWindow(p, head, half))
+                        .map(p -> new AgentState.SnakeSegment(other.agentId, p.x(), p.y())))
+                .toList();
+
+        return new AgentState(tick, snake.agentId, self, visibleFood, nearbySnakes, windowSize, gridSize);
+    }
+
+    boolean inWindow(Position p, Position head, int half) {
+        return Math.abs(p.x() - head.x()) <= half && Math.abs(p.y() - head.y()) <= half;
     }
 
     public List<String> agentIds() {
