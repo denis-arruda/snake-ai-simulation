@@ -28,6 +28,12 @@ public class Snake {
         cells = updated;
     }
 
+    void grow(Position newHead) {
+        var updated = new ArrayList<>(cells);
+        updated.add(0, newHead);
+        cells = updated;
+    }
+
     void kill() {
         alive = false;
     }

@@ -80,7 +80,7 @@
 
 <div id="hud">
     <div><span id="status-dot"></span><span id="status-text">Connecting…</span></div>
-    <div>Tick: <span id="tick">—</span></div>
+    <div>Time: <span id="elapsed">00:00</span></div>
     <div>Snakes: <span id="snake-count">—</span></div>
 </div>
 
@@ -143,12 +143,25 @@
         });
     }
 
+    let sessionStart  = null;
+    let sessionFrozen = null;
+
+    function formatElapsed(ms) {
+        const mm = String(Math.floor(ms / 60000)).padStart(2, '0');
+        const ss = String(Math.floor(ms / 1000) % 60).padStart(2, '0');
+        return `${mm}:${ss}`;
+    }
+
     function render(state) {
         drawEmpty();
         drawFood(state.foods   ?? []);
         drawSnakes(state.snakes ?? []);
 
-        document.getElementById('tick').textContent        = state.tick;
+        const allDead = (state.snakes ?? []).every(s => !s.alive);
+        if (sessionStart === null) sessionStart = Date.now();
+        if (allDead && sessionFrozen === null) sessionFrozen = Date.now();
+
+        document.getElementById('elapsed').textContent     = formatElapsed((sessionFrozen ?? Date.now()) - sessionStart);
         document.getElementById('snake-count').textContent = (state.snakes ?? []).filter(s => s.alive).length;
     }
 
@@ -172,6 +185,8 @@
     }
 
     function restart() {
+        sessionStart  = null;
+        sessionFrozen = null;
         fetch('/game/restart', { method: 'POST' });
     }
 

@@ -46,9 +46,17 @@ public class GameState {
         var newHead = nextHead(snake);
         if (isOutOfBounds(newHead) || snake.cells.contains(newHead)) {
             snake.kill();
+        } else if (foods.remove(newHead)) {
+            snake.grow(newHead);
+            spawnFood();
         } else {
             snake.move(newHead);
         }
+    }
+
+    void spawnFood() {
+        var occupied = Stream.concat(snakes.stream().flatMap(s -> s.cells.stream()), foods.stream()).toList();
+        foods.addAll(randomPositions(1, occupied));
     }
 
     Position nextHead(Snake snake) {
