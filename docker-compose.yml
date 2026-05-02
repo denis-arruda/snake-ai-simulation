@@ -13,8 +13,8 @@ services:
       test: ["CMD-SHELL", "curl -sf http://localhost:8080/admin/v2/brokers/health"]
       interval: 5s
       timeout: 5s
-      retries: 30
-      start_period: 30s
+      retries: 12
+      start_period: 10s
 
   # ── Application services ───────────────────────────────────────────────────
   engine:
