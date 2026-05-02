@@ -2,6 +2,8 @@
 
 A distributed multi-agent system where independent AI agents control snakes competing in a shared 30×30 grid. Built to demonstrate event-driven architecture, asynchronous decision-making, fault tolerance, and observability in a real-time system.
 
+This project is an independent implementation of a classic Snake-style game, focused on distributed multi-agent systems and observability.
+
 See [docs/spec.md](docs/spec.md) for the full technical specification.
 
 ---
