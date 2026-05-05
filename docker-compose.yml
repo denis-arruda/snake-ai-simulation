@@ -29,10 +29,23 @@ services:
         condition: service_healthy
     restart: on-failure
 
-  agent:
+  agent-1:
     image: snake/snake-agent:latest
     environment:
       AGENT_ID: agent-1
+      PULSAR_SERVICE_URL: pulsar://pulsar:6650
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://lgtm:4317
+      LLM_API_KEY: ${LLM_API_KEY}
+      AGENT_LLM_MODEL: ${AGENT_LLM_MODEL:-gpt-4o-mini}
+    depends_on:
+      pulsar:
+        condition: service_healthy
+    restart: on-failure
+
+  agent-2:
+    image: snake/snake-agent:latest
+    environment:
+      AGENT_ID: agent-2
       PULSAR_SERVICE_URL: pulsar://pulsar:6650
       OTEL_EXPORTER_OTLP_ENDPOINT: http://lgtm:4317
       LLM_API_KEY: ${LLM_API_KEY}

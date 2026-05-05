@@ -36,8 +36,10 @@ public class GameState {
 
     @PostConstruct
     public void restart() {
-        tick   = 0;
-        snakes = List.of(randomSnake("agent-1"));
+        tick = 0;
+        var snake1 = randomSnake("agent-1", List.of());
+        var snake2 = randomSnake("agent-2", snake1.cells);
+        snakes = List.of(snake1, snake2);
         var occupied = snakes.stream().flatMap(s -> s.cells.stream()).toList();
         foods  = new ArrayList<>(randomPositions(maxFood, occupied));
     }
@@ -71,7 +73,11 @@ public class GameState {
 
     void advanceSnake(Snake snake) {
         var newHead = nextHead(snake);
-        if (isOutOfBounds(newHead) || snake.cells.contains(newHead)) {
+        var otherCells = snakes.stream()
+                .filter(s -> s.alive && !s.agentId.equals(snake.agentId))
+                .flatMap(s -> s.cells.stream())
+                .toList();
+        if (isOutOfBounds(newHead) || snake.cells.contains(newHead) || otherCells.contains(newHead)) {
             snake.kill();
         } else if (foods.remove(newHead)) {
             snake.grow(newHead);
@@ -149,10 +155,14 @@ public class GameState {
         return snakes.stream().map(s -> s.agentId).toList();
     }
 
-    Snake randomSnake(String agentId) {
-        var direction = randomDirection();
-        var head      = randomHead(direction);
-        var cells     = buildBody(head, direction);
+    Snake randomSnake(String agentId, List<Position> excluded) {
+        Direction direction;
+        List<Position> cells;
+        do {
+            direction = randomDirection();
+            var head  = randomHead(direction);
+            cells     = buildBody(head, direction);
+        } while (cells.stream().anyMatch(excluded::contains));
         return new Snake(agentId, cells, direction);
     }
 
