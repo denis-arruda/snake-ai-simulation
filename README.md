@@ -10,7 +10,7 @@ See [docs/spec.md](docs/spec.md) for the full technical specification.
 
 ## How it works
 
-- The **Game Engine** runs a tick-based game loop and publishes state snapshots to Apache Pulsar
+- The **Game Engine** runs a tick-based game loop and publishes state snapshots to Apache Kafka
 - Each **Agent** consumes its own perception window, calls an LLM (Anthropic Claude) to decide the next move, and publishes its decision back
 - The engine applies the latest known decision each tick — agents that are slow or down simply continue in their last direction
 - A **WebSocket** endpoint streams the render state to the browser in real time
@@ -64,8 +64,7 @@ docker compose up
 | Grafana (dashboards) | http://localhost:3000 |
 | OTLP gRPC (traces / metrics / logs) | localhost:4317 |
 | OTLP HTTP | localhost:4318 |
-| Pulsar broker | localhost:6650 |
-| Pulsar admin API | http://localhost:8080 |
+| Kafka broker | localhost:9092 |
 
 ---
 
@@ -73,7 +72,7 @@ docker compose up
 
 ```
 ├── common/       Shared message model (AgentState, AgentDecision, RenderState)
-├── engine/       Quarkus app — game loop, WebSocket gateway, Pulsar producer/consumer
+├── engine/       Quarkus app — game loop, WebSocket gateway, Kafka producer/consumer
 ├── agent/        Quarkus app — LLM-driven snake controller
 ├── docs/
 │   └── spec.md   Full technical specification

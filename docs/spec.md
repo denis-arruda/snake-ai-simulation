@@ -19,14 +19,14 @@ The goal is to demonstrate:
 
 * **Game Engine** (includes WebSocket Gateway)
 * **Agent Services (2–5 instances)**
-* **Messaging Layer (Apache Pulsar)**
+* **Messaging Layer (Apache Kafka)**
 * **Web UI (Canvas-based)**
 * **Observability Stack (Grafana LGTM)**
 
 ### Architecture Diagram (Logical)
 
 ```
-Agents <--> Pulsar <--> Game Engine <--> WebSocket <--> Browser
+Agents <--> Kafka <--> Game Engine <--> WebSocket <--> Browser
                                 |
                           Grafana LGTM
                     (Loki / Tempo / Mimir / Grafana)
@@ -132,8 +132,8 @@ Agents <--> Pulsar <--> Game Engine <--> WebSocket <--> Browser
   | Agent → LLM (OpenAI) | `@Retry` | 2 retries, 500 ms delay; aborts on timeout |
   | Agent → LLM (OpenAI) | `@CircuitBreaker` | Opens after 60 % failures in 5 requests; stays open 30 s |
   | Agent → LLM (OpenAI) | `@Fallback` | Returns `null` → decision skipped → snake holds direction |
-  | Engine → Pulsar (perception) | `@Retry` | 2 retries, 100 ms delay |
-  | Engine → Pulsar (perception) | `@CircuitBreaker` | Opens after 50 % failures in 10 requests; stays open 15 s |
+  | Engine → Kafka (perception) | `@Retry` | 2 retries, 100 ms delay |
+  | Engine → Kafka (perception) | `@CircuitBreaker` | Opens after 50 % failures in 10 requests; stays open 15 s |
   | Engine tick | `@Timeout` | 1 s — prevents tick pile-up under load |
 
 ---
@@ -154,7 +154,7 @@ Agents <--> Pulsar <--> Game Engine <--> WebSocket <--> Browser
 | Language | Java 26 |
 | Runtime | Quarkus |
 | Concurrency | Virtual threads (`quarkus-virtual-threads`) — all blocking handlers run on virtual threads via `@RunOnVirtualThread` |
-| Messaging | Apache Pulsar |
+| Messaging | Apache Kafka |
 | AI / LLM | LangChain4j |
 | LLM Model | Configurable via `AGENT_LLM_MODEL` (default: `gpt-4o-mini`) |
 | LLM Provider | OpenAI — key via `LLM_API_KEY` env var |
@@ -167,14 +167,14 @@ Agents <--> Pulsar <--> Game Engine <--> WebSocket <--> Browser
 
 ---
 
-## 6. Messaging Design (Apache Pulsar)
+## 6. Messaging Design (Apache Kafka)
 
 ### 6.1 Topics
 
 #### 6.1.1 Agent Perception
 
 ```
-persistent://public/default/snake-agent-state-{agentId}
+snake-agent-state-{agentId}
 ```
 
 * One topic per agent
@@ -185,7 +185,7 @@ persistent://public/default/snake-agent-state-{agentId}
 #### 6.1.2 Agent Decisions
 
 ```
-persistent://public/default/snake-agent-decisions
+snake-agent-decisions
 ```
 
 * Shared topic
@@ -196,7 +196,7 @@ persistent://public/default/snake-agent-decisions
 #### 6.1.3 Render State
 
 ```
-persistent://public/default/snake-render-state
+snake-render-state
 ```
 
 * Consumed by the WebSocket handler in the engine
@@ -280,8 +280,8 @@ persistent://public/default/snake-render-state
 1. Update each snake's position using its last known direction
 2. Detect collisions (wall, self, other snake)
 3. Handle food consumption (grow snake, replenish food)
-4. Publish render state to Pulsar (render-state topic)
-5. Publish perception snapshots to per-agent topics (sampled, not every tick)
+4. Publish render state to Kafka (render-state topic)
+5. Publish perception snapshots to per-agent Kafka topics (sampled, not every tick)
 6. Push render state to connected WebSocket clients
 ```
 
@@ -308,7 +308,7 @@ persistent://public/default/snake-render-state
 
 | Class | Role |
 |---|---|
-| `AgentDecider` | Pulsar consumer; manages the latest-value slot and virtual thread executor |
+| `AgentDecider` | Kafka consumer; manages the latest-value slot and virtual thread executor |
 | `LlmGateway` | CDI bean wrapping the LLM call with `@Timeout`, `@Retry`, `@CircuitBreaker`, `@Fallback` |
 | `SnakeDecisionAi` | LangChain4j `@RegisterAiService` interface — the actual OpenAI call |
 
@@ -319,7 +319,7 @@ persistent://public/default/snake-render-state
 * **Latest-value slot:** incoming perception messages overwrite an `AtomicReference` — only the freshest state is ever processed
 * An `AtomicBoolean` gate ensures at most one LLM call is in-flight at a time; arriving messages during processing are dropped (overwrite the slot)
 * LLM calls run on virtual threads via `Executors.newVirtualThreadPerTaskExecutor()`
-* The Pulsar consumer handler (`@Incoming`) is annotated `@RunOnVirtualThread`
+* The Kafka consumer handler (`@Incoming`) is annotated `@RunOnVirtualThread`
 
 ---
 
@@ -391,9 +391,9 @@ Trace the full decision flow:
 
 ```
 Engine (publish perception)
-  → Pulsar
+  → Kafka
     → Agent (receive perception → LLM call → publish decision)
-      → Pulsar
+      → Kafka
         → Engine (receive decision)
 ```
 
@@ -418,7 +418,7 @@ Services in `docker-compose.yml`:
 
 | Service | Image |
 |---|---|
-| `pulsar` | `apachepulsar/pulsar` |
+| `kafka` | `confluentinc/cp-kafka` |
 | `engine` | Built from source |
 | `agent-{1..N}` | Built from source (same image, different env) |
 | `prometheus` | `prom/prometheus` |
