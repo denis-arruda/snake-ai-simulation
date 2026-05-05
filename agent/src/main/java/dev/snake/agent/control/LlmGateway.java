@@ -1,4 +1,4 @@
-package dev.snake.agent;
+package dev.snake.agent.control;
 
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;

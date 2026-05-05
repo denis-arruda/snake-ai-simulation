@@ -1,4 +1,4 @@
-package dev.snake.agent;
+package dev.snake.agent.control;
 
 import org.eclipse.microprofile.faulttolerance.ExecutionContext;
 import org.eclipse.microprofile.faulttolerance.FallbackHandler;

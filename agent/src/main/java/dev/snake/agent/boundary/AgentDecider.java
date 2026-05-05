@@ -1,7 +1,7 @@
 package dev.snake.agent.boundary;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import dev.snake.agent.LlmGateway;
+import dev.snake.agent.control.LlmGateway;
 import dev.snake.common.entity.AgentDecision;
 import dev.snake.common.entity.AgentState;
 import dev.snake.common.entity.Direction;
@@ -91,20 +91,27 @@ public class AgentDecider {
         var head = state.self().head();
         var body = state.self().body();
         int g    = state.gridSize();
+        var enemyPositions = state.nearbySnakes().stream()
+                .map(s -> new AgentState.Position(s.x(), s.y()))
+                .toList();
 
         var moves = new StringBuilder();
         for (var dir : Direction.values()) {
-            var next    = step(head, dir);
-            var danger  = isOutOfBounds(next, g) ? "WALL — instant death"
-                        : body.contains(next)     ? "BODY — instant death"
-                        : "safe";
-            var dist    = wallDistance(head, dir, g);
-            moves.append("  %-5s → (%2d,%2d)  %-22s  (%d step%s to wall)%n"
-                    .formatted(dir, next.x(), next.y(), danger, dist, dist == 1 ? "" : "s"));
+            var next       = step(head, dir);
+            var danger     = isOutOfBounds(next, g)      ? "WALL — instant death"
+                           : body.contains(next)          ? "BODY — instant death"
+                           : enemyPositions.contains(next) ? "SNAKE — instant death"
+                           : "safe";
+            var wallDist   = wallDistance(head, dir, g);
+            var snakeDist  = snakeDistance(next, enemyPositions);
+            var snakeInfo  = snakeDist == Integer.MAX_VALUE
+                           ? "no snake nearby"
+                           : snakeDist + " step" + (snakeDist == 1 ? "" : "s") + " to snake";
+            moves.append("  %-5s → (%2d,%2d)  %-22s  (%d step%s to wall)  (%s)%n"
+                    .formatted(dir, next.x(), next.y(), danger, wallDist, wallDist == 1 ? "" : "s", snakeInfo));
         }
 
-        var food   = state.visibleFood().isEmpty() ? "none visible" : state.visibleFood().toString();
-        var snakes = state.nearbySnakes().isEmpty() ? "none"         : state.nearbySnakes().toString();
+        var food = state.visibleFood().isEmpty() ? "none visible" : state.visibleFood().toString();
 
         return """
                 Grid %dx%d  |  x=0..%d left→right, y=0..%d top→bottom  |  currently moving %s
@@ -113,15 +120,15 @@ public class AgentDecider {
                 Move options:
                 %s
                 Visible food: %s
-                Nearby snakes: %s
 
-                Avoid WALL and BODY moves. Prefer moves with more steps to wall.
+                Avoid WALL, BODY, and SNAKE moves — all cause instant death.
+                Prefer moves with more steps to wall and more steps to snake.
                 Reply with exactly one word: UP DOWN LEFT RIGHT
                 """.formatted(
                 g, g, g - 1, g - 1, state.self().direction(),
                 head.x(), head.y(),
                 moves,
-                food, snakes);
+                food);
     }
 
     AgentState.Position step(AgentState.Position pos, Direction dir) {
@@ -135,6 +142,13 @@ public class AgentDecider {
 
     boolean isOutOfBounds(AgentState.Position pos, int g) {
         return pos.x() < 0 || pos.x() >= g || pos.y() < 0 || pos.y() >= g;
+    }
+
+    int snakeDistance(AgentState.Position from, java.util.List<AgentState.Position> enemies) {
+        return enemies.stream()
+                .mapToInt(e -> Math.abs(e.x() - from.x()) + Math.abs(e.y() - from.y()))
+                .min()
+                .orElse(Integer.MAX_VALUE);
     }
 
     int wallDistance(AgentState.Position head, Direction dir, int g) {
