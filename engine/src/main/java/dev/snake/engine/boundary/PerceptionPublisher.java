@@ -6,16 +6,16 @@ import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
-import org.apache.pulsar.client.api.Producer;
-import org.apache.pulsar.client.api.PulsarClient;
-import org.apache.pulsar.client.api.PulsarClientException;
+import org.apache.kafka.clients.producer.KafkaProducer;
+import org.apache.kafka.clients.producer.ProducerConfig;
+import org.apache.kafka.clients.producer.ProducerRecord;
+import org.apache.kafka.common.serialization.StringSerializer;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.eclipse.microprofile.faulttolerance.CircuitBreaker;
 import org.eclipse.microprofile.faulttolerance.Retry;
 
-import java.nio.charset.StandardCharsets;
 import java.time.temporal.ChronoUnit;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.Properties;
 
 @ApplicationScoped
 public class PerceptionPublisher {
@@ -24,16 +24,13 @@ public class PerceptionPublisher {
 
     final ObjectMapper objectMapper;
 
-    @ConfigProperty(name = "mp.messaging.connector.smallrye-pulsar.serviceUrl",
-                    defaultValue = "pulsar://localhost:6650")
-    String serviceUrl;
+    @ConfigProperty(name = "kafka.bootstrap.servers", defaultValue = "localhost:9092")
+    String bootstrapServers;
 
-    @ConfigProperty(name = "game.agent.perception.topic-base",
-                    defaultValue = "persistent://public/default/snake-agent-state")
+    @ConfigProperty(name = "game.agent.perception.topic-base", defaultValue = "snake-agent-state")
     String agentTopicBase;
 
-    PulsarClient pulsarClient;
-    final ConcurrentHashMap<String, Producer<byte[]>> producers = new ConcurrentHashMap<>();
+    KafkaProducer<String, String> kafkaProducer;
 
     @Inject
     PerceptionPublisher(ObjectMapper objectMapper) {
@@ -42,40 +39,23 @@ public class PerceptionPublisher {
 
     @PostConstruct
     void init() {
-        try {
-            pulsarClient = PulsarClient.builder()
-                    .serviceUrl(serviceUrl)
-                    .build();
-        } catch (PulsarClientException e) {
-            throw new RuntimeException("Failed to create Pulsar client for perception publishing", e);
-        }
+        var props = new Properties();
+        props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
+        props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
+        props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
+        kafkaProducer = new KafkaProducer<>(props);
     }
 
     @Retry(maxRetries = 2, delay = 100, delayUnit = ChronoUnit.MILLIS)
     @CircuitBreaker(requestVolumeThreshold = 10, failureRatio = 0.5, delay = 15, delayUnit = ChronoUnit.SECONDS)
     public void publish(AgentState agentState) throws Exception {
         var json = objectMapper.writeValueAsString(agentState);
-        producerFor(agentState.agentId()).send(json.getBytes(StandardCharsets.UTF_8));
-    }
-
-    Producer<byte[]> producerFor(String agentId) throws PulsarClientException {
-        var producer = producers.get(agentId);
-        if (producer == null) {
-            producer = pulsarClient.newProducer()
-                    .topic(agentTopicBase + "-" + agentId)
-                    .create();
-            producers.put(agentId, producer);
-        }
-        return producer;
+        var topic = agentTopicBase + "-" + agentState.agentId();
+        kafkaProducer.send(new ProducerRecord<>(topic, agentState.agentId(), json)).get();
     }
 
     @PreDestroy
     void close() {
-        producers.values().forEach(p -> {
-            try { p.close(); } catch (PulsarClientException ignored) {}
-        });
-        try {
-            if (pulsarClient != null) pulsarClient.close();
-        } catch (PulsarClientException ignored) {}
+        if (kafkaProducer != null) kafkaProducer.close();
     }
 }

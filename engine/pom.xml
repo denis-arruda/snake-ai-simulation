@@ -21,7 +21,7 @@
         <!-- Messaging -->
         <dependency>
             <groupId>io.quarkus</groupId>
-            <artifactId>quarkus-messaging-pulsar</artifactId>
+            <artifactId>quarkus-messaging-kafka</artifactId>
         </dependency>
 
         <!-- WebSocket -->
